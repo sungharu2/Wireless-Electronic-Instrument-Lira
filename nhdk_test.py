@@ -33,12 +33,28 @@ import time
 
 from kivy.core.window import Window
 
-#tickCount = 0
+tickCount = 0
 # Window.size = (200, 400)
-#Config.set('graphics', 'width', '200')
-#Config.set('graphics', 'height', '400')
-#Config.write()
+Config.set('graphics', 'width', '200')
+Config.set('graphics', 'height', '400')
+Config.write()
 
+print 'Import complete'
+
+# 서버와 소켓통신에 실패할 경우 netConnect 0으로 한 후 소켓통신 하지 않음
+netConnect = 1
+# usb 연결 시 생성되는 폴더로 시리얼 연결 후 usbConnect = 1, 실패 시 0
+usbConnect = 0
+try:
+    ser = serial.Serial(
+        '/dev/ttyACM0',
+        9600,
+    )
+    print("Sensor Connected")
+    usbConnect = 1
+except:
+    print("No Sensor Connected")
+    usbConnect = 0
 
 
 # 아두이노의 map 함수 구현, 처음 min~max 사이의 x값을 특정한 min~max 사이의 값으로 반환
@@ -49,28 +65,24 @@ def map(x, in_min, in_max, out_min, out_max):
 class Position(FloatLayout):
     def on_touch_down(self, touch):
         global netConnect, usbConnect
-#	if (0 < touch.x and touch.x <= 100 and 0 < touch.y and touch.y <= 50):
-#	    return 1
-
         try:
             if netConnect == 1:
                 sock = socket(AF_INET, SOCK_STREAM)
                 #------------------------------------------------------
-                sock.connect(('192.168.137.70', 5200))     # 서버 IP 지정
+                sock.connect(('192.168.43.1', 5200))     # 서버 IP 지정
                 #------------------------------------------------------
-                msg = self.return_serial(touch.x, touch.y)    # (x_y_시리얼값) 으로 전달
+                msg = self.send_Serial(touch.x, touch.y)    # (x_y_시리얼값) 으로 전달
                 sock.send(msg.encode('utf-8'))
                 sock.recv(1024)
                 sock.close()
                 netConnect = 1
             else:
                 pass
+
         except Exception, e:
             netConnect = 0
             print(e)
 
-
-        touch.ungrab(self)
         # ud = User Data dictionary 각 터치들을 캔버스에 그리기 위해 그룹별로 관리, 색깔, 모양 지정
         ud = touch.ud
         # 그룹은 id값으로 분류
@@ -90,8 +102,6 @@ class Position(FloatLayout):
         return super(Position, self).on_touch_down(touch)
 
     def on_touch_move(self, touch):
-#	if (0 < touch.x and touch.x <= 100 and 0 < touch.y and touch.y <= 50):
-#	    return 1
 
         ud = touch.ud
         self.canvas.remove_group(ud['group'])   # 이전 그래픽 삭제 후 새 위치에 재생성
@@ -108,11 +118,8 @@ class Position(FloatLayout):
         return super(Position, self).on_touch_move(touch)
 
     def on_touch_up(self, touch):
-	global netConnect
 
-#if (0 < touch.x and touch.x <= 100 and 0 < touch.y and touch.y <= 50):
-#           return 1
-
+        touch.ungrab(self)
         # 손을 떼기전 존재했던 터치 데이터 삭제
         ud = touch.ud
         self.canvas.remove_group(ud['group'])
@@ -130,11 +137,11 @@ class Position(FloatLayout):
         else:
             net_text.text = "Offline"
 
-    def return_serial(self, x, y):
+    def return_Serial(self, x, y):
         global ser
 
         # 메시지 형식 : xxx_yyy_ser\n
-        message = str(int(x)) + '_' + str(int(y))
+        message = str(x) + '_' + str(y)
         if usbConnect == 1:
             if ser.readable:
                 ser.write('a')  # 테스트 Send
@@ -146,7 +153,9 @@ class Position(FloatLayout):
         print(message)
         return message
 
-
+    def onclick_button(self):
+        self.parent.parent.clear_widget()
+        MyApp().build()
 
     def __init__(self):
         self.update_label_connectionInfo()
@@ -158,77 +167,21 @@ class Position(FloatLayout):
 
 class MyApp(App):
     def build(self):
-        global net_text, layout, ser, netConnect, usbConnect, exit_flag, button_flag
+        global net_text
 
-# 서버와 소켓통신에 실패할 경우 netConnect 0으로 한 후 소켓통신 하지 않음
-        netConnect = 1
-# usb 연결 시 생성되는 폴더로 시리얼 연결 후 usbConnect = 1, 실패 시 0
-        usbConnect = 0
-        try:
-            ser = serial.Serial(
-                '/dev/ttyACM0',
-                9600,
-            )
-            print("Sensor Connected")
-            usbConnect = 1
-        except:
-            print("No Sensor Connected")
-            usbConnect = 0
-        button_flag = False
-        exit_flag = False
-        
-	
-	view = Position()
-        layout=FloatLayout(size=(800, 600), cols=1, spacing=10, size_hint_y=None)
+        view = Position()
+        layout= FloatLayout(size=(800, 600), cols=1, spacing=10, size_hint_y=None)
         view.add_widget(layout)
 
         net_text = Label(text="Connect to Touch", font_size='20sp')
         layout.add_widget(net_text)
 
-        restart_button = Button(text="Restart", font_size='15sp', size_hint=(None, None), size=(50, 50), pos=(0, 0))
-        restart_button.bind(on_release=self.onclick_restart_button)
-        layout.add_widget(restart_button)
-        
-        exit_button = Button(text="Exit", font_size='15sp', size_hint=(None, None), size=(50, 50), pos=(50, 00))
-	exit_button.bind(on_release=self.onclick_exit_button)
-	layout.add_widget(exit_button)
+        reconnect_button = Button(text="reconnect", font_size='15sp', size=[1, 1], center=[10, 10])
+        reconnect_button.bind(on_release=Position.onclick_button)
+        layout.add_widget(reconnect_button)
 
         return view
 
-    def clear(self):
-        global layout
-        layout.clear_widgets()
 
-
-    def onclick_restart_button(self, obj):
-	global button_flag
-	if not button_flag:
-	    button_flag = True
-	    print("Restart")
-	    self.clear()
-            self.stop_app()
-	    button_flag = False
-
-    def onclick_exit_button(self, obj):
-	global button_flag, exit_flag
-	if not button_flag:
-	    button_flag = True
-	    exit_flag = True
-	    print("Exit")
-	    self.clear()
-	    self.stop_app()
-	    button_flag = False
-    
-    def stop_app(self):
-	App.get_running_app().stop()
-
-if __name__ == '__main__':
-    MyApp().run()
-
-def runApp():
-    MyApp().run() 
-   
-    if (exit_flag):
-	return 0
-    else:
-        return 1
+# if __name__ == '__main__':
+MyApp().run()
